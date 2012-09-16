@@ -7,6 +7,7 @@
 (defpackage cl-envy
   (:use :cl)
   (:export :/.
+           :bnd
            :tree-mapleaf
            :tree-doleaf
            :tree-count-if
@@ -15,15 +16,16 @@
            :->$))
 (in-package :cl-envy)
 
-(defun /.-split (body &optional head)
-  (if body
-    (if (let ((first (car body)))
-          (and (symbolp first) (string= "->" (symbol-name first))))
-      (values (reverse head) (cdr body))
-      (if (null (cdr body))
-        (values (reverse head) body)
-        (/.-split (cdr body) (cons (car body) head))))
-    (values (reverse head) body)))
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun /.-split (body &optional head)
+    (if body
+      (if (let ((first (car body)))
+            (and (symbolp first) (string= "->" (symbol-name first))))
+        (values (reverse head) (cdr body))
+        (if (null (cdr body))
+          (values (reverse head) body)
+          (/.-split (cdr body) (cons (car body) head))))
+      (values (reverse head) body))))
 
 (defmacro /. (&body body)
   (multiple-value-bind (lambda-list body) (/.-split body)
@@ -33,21 +35,32 @@
                                   (let ((gensym (gensym "UNUSED")))
                                     (cons gensym gensym))
                                   (cons x nil)))
-                    lambda-list)))
+                    lambda-list))
+           (ignores (remove-if #'not (mapcar #'cdr params))))
       `(lambda (,@(mapcar #'car params))
-        ,@(mapcar (lambda (x) `(declare (ignore ,x)))
-          (remove-if #'not (mapcar #'cdr params)))
+        ,@(when ignores `((declare (ignore ,@ignores))))
         ,@body))))
+
+(defmacro bnd (&body body)
+  (multiple-value-bind (binding-pairs body) (/.-split body)
+    (labels ((bnd-inner (bindings)
+               (if bindings
+                 (destructuring-bind (name value . rest) bindings
+                   (if (consp name)
+                     `((multiple-value-bind ,name ,value ,@(bnd-inner rest)))
+                     `((let ((,name ,value)) ,@(bnd-inner rest)))))
+                 body)))
+      (car (bnd-inner binding-pairs)))))
 
 (defun tree-mapleaf (function tree)
   (if (consp tree)
-    (cons (tree-mapleaf function (car tree)) 
+    (cons (tree-mapleaf function (car tree))
           (if (cdr tree) (tree-mapleaf function (cdr tree))))
     (funcall function tree)))
 
 (defun tree-doleaf (function tree)
   (if (consp tree)
-    (progn (tree-doleaf function (car tree)) 
+    (progn (tree-doleaf function (car tree))
            (if (cdr tree) (tree-doleaf function (cdr tree))))
     (funcall function tree))
   tree)
@@ -59,7 +72,7 @@
 
 (defun tree-find-if (predicate tree)
   (block nil
-         (tree-mapleaf (/. x (if (funcall predicate x) (return (values x T)))) 
+         (tree-mapleaf (/. x (if (funcall predicate x) (return (values x T))))
                       tree)
          (values nil nil)))
 
@@ -82,9 +95,9 @@
           (if (tree-find-if #'is-dollar-symbol form)
             (let ((gensym (gensym)))
               `(let ((,gensym ,x))
-                (,@(tree-mapleaf (/. leaf (if (is-dollar-symbol leaf) 
+                (,@(tree-mapleaf (/. leaf (if (is-dollar-symbol leaf)
                                             gensym leaf))
                            form))))
-            `(,(car form) ,x ,@(cdr form)))) 
+            `(,(car form) ,x ,@(cdr form))))
         (list form x)))
     x))
