@@ -27,30 +27,48 @@
           (/.-split (cdr body) (cons (car body) head))))
       (values (reverse head) body))))
 
-(defmacro /. (&body body)
-  (multiple-value-bind (lambda-list body) (/.-split body)
-    (let* ((params (mapcar
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun process-unused (lambda-list)
+    (let ((params (mapcar
                     (lambda (x) (if (and (symbolp x)
-                                          (string= (symbol-name x) "_"))
+                                     (string= (symbol-name x) "_"))
                                   (let ((gensym (gensym "UNUSED")))
                                     (cons gensym gensym))
                                   (cons x nil)))
-                    lambda-list))
-           (ignores (remove-if #'not (mapcar #'cdr params))))
-      `(lambda (,@(mapcar #'car params))
-        ,@(when ignores `((declare (ignore ,@ignores))))
-        ,@body))))
+                    lambda-list)))
+      (values params (remove-if #'not (mapcar #'cdr params))))))
+
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun process-binding-pair (lambda-list)
+    (destructuring-bind (name value . rest) lambda-list
+      (if (and (symbolp name)
+               (string= (symbol-name name) "_"))
+        (let ((gensym (gensym "UNUSED")))
+          (values gensym value gensym rest))
+        (values name value nil rest)))))
 
 (defmacro bnd (&body body)
   (multiple-value-bind (binding-pairs body) (/.-split body)
     (labels ((bnd-inner (bindings)
                (if bindings
-                 (destructuring-bind (name value . rest) bindings
+                 (multiple-value-bind
+                   (name value unused rest) (process-binding-pair bindings)
                    (if (consp name)
-                     `((multiple-value-bind ,name ,value ,@(bnd-inner rest)))
-                     `((let ((,name ,value)) ,@(bnd-inner rest)))))
+                     `((multiple-value-bind ,name ,value
+                         ,@(when unused `((declare (ignore ,unused))))
+                         ,@(bnd-inner rest)))
+                     `((let ((,name ,value))
+                         ,@(when unused `((declare (ignore ,unused))))
+                         ,@(bnd-inner rest)))))
                  body)))
       (car (bnd-inner binding-pairs)))))
+
+(defmacro /. (&body body)
+  (bnd (lambda-list body) (/.-split body)
+       (params ignores) (process-unused lambda-list)
+    `(lambda (,@(mapcar #'car params))
+      ,@(when ignores `((declare (ignore ,@ignores))))
+      ,@body)))
 
 (defun tree-mapleaf (function tree)
   (if (consp tree)
@@ -66,7 +84,7 @@
   tree)
 
 (defun tree-count-if (predicate tree)
-  (let ((count 0))
+  (bnd count 0 ->
     (tree-doleaf (/. x (if (funcall predicate x) (incf count))) tree)
     count))
 
@@ -93,7 +111,7 @@
         (labels ((is-dollar-symbol (y)
                    (and (symbolp y) (string= (symbol-name y) "$"))))
           (if (tree-find-if #'is-dollar-symbol form)
-            (let ((gensym (gensym)))
+            (bnd gensym (gensym)
               `(let ((,gensym ,x))
                 (,@(tree-mapleaf (/. leaf (if (is-dollar-symbol leaf)
                                             gensym leaf))
