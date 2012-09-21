@@ -134,6 +134,75 @@ With ignored "_" parameters.
     (+ X Z)))
 ```
 
+
+### Functions for simple trees
+
+A simple tree is basically a list where the leaves are all the non-list
+top level values and lists are considered branches of the tree and
+treated the same way recursively.
+
+This is a simple tree with 5 numbers as leaves looks like this:
+
+```common-lisp
+'(1 2 ((3) 4 (5)))
+```
+
+#### TREE-MAPLEAF - like MAPCAR for simple trees
+
+This function creates a new simple tree where the each leaf is the
+result of applying some function to the original leaf. Unlike MAPCAR, it
+only operates on one tree though multiple trees may be added later. I
+can't think of many situations where that would be useful.
+
+```common-lisp
+(tree-mapleaf #'1+ '(1 (2) (3 (4)) 5))
+;;-> (2 (3) (4 (5)) 6)
+```
+
+#### TREE-DOLEAF - like MAPC for simple trees
+
+TREE-DOLEAF is to MAPC as TREE-MAPLEAF is to MAPCAR. In other words,
+this just applies the function to the leaves, and then returns the
+original tree.
+
+```common-lisp
+(tree-doleaf #'print '(1 (2) (3 (4)) 5))
+;; 1
+;; 2
+;; 3
+;; 4
+;; 5
+;;-> (1 (2) (3 (4)) 5)
+```
+
+#### TREE-COUNT-IF - like COUNT-IF for simple trees
+
+Doesn't support any of the keyword parameters of COUNT-IF, most of which
+would not make sense, except KEY, but that's superfluous as you can get
+the same effect by composing the key function with the predicate. The
+Alexandria library contains the COMPOSE function which would be useful
+in this instance.
+
+```common-lisp
+(tree-count-if #'evenp '(1 (2) (3 (4)) 5))
+;;-> 2
+```
+
+#### TREE-FIND-IF - like FIND-IF for simple trees
+
+Doesn't support any of the keyword parameters of FIND-IF, for the same
+reasons as TREE-COUNT-IF. Does return a second value to signal if the
+element returned was found in the list. Search is performed depth first.
+
+```common-lisp
+(tree-find-if #'oddp '(1 (2) (3 (4)) 5))
+;;-> 1
+;;-> T
+(tree-find-if #'oddp '(2 (2) (4 (4)) 6))
+;;-> NIL
+;;-> NIL
+```
+
 ## Installation
 
 ## Author
