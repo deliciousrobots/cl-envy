@@ -111,7 +111,9 @@ Now, with "->" for implicit PROGN:
 With implicit MULTIPLE-VALUE-BIND:
 
 ```common-lisp
-(bnd x 10 (y z) (floor 5 x) (+ x z))
+(bnd x 10
+     (y z) (floor 5 x)
+  (+ x z))
 ;; expands to:
 (LET ((X 10))
   (MULTIPLE-VALUE-BIND (Y Z) (FLOOR 5 X)
@@ -121,6 +123,15 @@ With implicit MULTIPLE-VALUE-BIND:
 With ignored "_" parameters.
 
 ```common-lisp
+(bnd x 10
+     (_ z) (floor 5 x)
+  (+ x z))
+;; expands to:
+(LET ((X 10))
+  (MULTIPLE-VALUE-BIND (#:UNUSED767 Z)
+      (FLOOR 5 X)
+    (DECLARE (IGNORE #:UNUSED767))
+    (+ X Z)))
 ```
 
 ## Installation
